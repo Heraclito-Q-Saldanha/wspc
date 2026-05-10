@@ -1,0 +1,27 @@
+[package]
+name = "wspc"
+version = "0.1.0"
+description = "`wspc` is a lightweight Rust library for building callback-driven JSON-RPC APIs over WebSockets with Axum."
+edition = "2024"
+authors = ["Heráclito de Quadros Saldanha <heraclitoqsaldanha@gmail.com>"]
+license = "MIT"
+keywords = ["wspc", "axum", "json-rpc", "rpc", "websocket"]
+readme = "README.md"
+repository = "https://github.com/Heraclito-Q-Saldanha/wspc"
+
+[dependencies]
+wspc_derive = { path = "../wspc_derive", version = "0.1.0" }
+
+log = "0.4.29"
+axum = { version = "0.8.9", features = ["ws"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = ["arbitrary_precision"] }
+state = "0.6.0"
+uuid = { version = "1.23.1", features = ["v4"] }
+tokio = { version = "1.52.1", features = ["sync"] }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
+futures-util = "0.3.32"
+
+[dev-dependencies]
+simple_logger = "5.2.0"
+tokio = { version = "1.52.1", features = ["full"] }

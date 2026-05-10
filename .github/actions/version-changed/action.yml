@@ -1,0 +1,48 @@
+name: Cargo Version Changed
+description: Detects if Cargo.toml version changed
+
+inputs:
+  manifest-path:
+    description: Path to Cargo.toml
+    required: false
+    default: Cargo.toml
+
+outputs:
+  changed:
+    description: Whether the version changed
+    value: ${{ steps.compare.outputs.changed }}
+
+  old_version:
+    description: Old version value
+    value: ${{ steps.compare.outputs.old_version }}
+
+  new_version:
+    description: New version value
+    value: ${{ steps.compare.outputs.new_version }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Compare versions
+      id: compare
+      shell: bash
+      env:
+        MANIFEST_PATH: ${{ inputs.manifest-path }}
+      run: |
+        NEW_VERSION=$(grep '^version =' "$MANIFEST_PATH" | head -1 | cut -d '"' -f2)
+
+        if git rev-parse HEAD^ >/dev/null 2>&1; then
+          OLD_VERSION=$(git show HEAD^:$MANIFEST_PATH | grep '^version =' | head -1 | cut -d '"' -f2)
+        else
+          OLD_VERSION=""
+        fi
+
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
+        
+        if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
