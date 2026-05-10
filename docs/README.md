@@ -28,5 +28,7 @@ async fn main() {
 }
 ```
 
+For more examples, see the [examples](../wspc/examples/) directory.
+
 
 This project is licensed under the [MIT License](../LICENSE)
