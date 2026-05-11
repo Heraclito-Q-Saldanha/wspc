@@ -21,7 +21,7 @@ struct InnerApp {
 	rooms: collections::HashMap<String, broadcast::Sender<RpcRequest>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct App {
 	inner: sync::Arc<tokio::sync::RwLock<InnerApp>>,
 }
@@ -41,16 +41,24 @@ impl App {
 		inner.callbacks.remove(event);
 	}
 
-	pub fn build_route() -> (axum::routing::MethodRouter, App) {
-		let inner = sync::Arc::default();
-		let app = App { inner };
+	#[inline(always)]
+	pub fn new() -> Self {
+		Self::default()
+	}
 
-		let io = app.clone();
-		let route = routing::any(move |ws: extract::WebSocketUpgrade| async move {
+	pub fn route<T: Clone + Send + Sync + 'static>(&self) -> axum::routing::MethodRouter<T> {
+		let app = self.clone();
+
+		routing::any(move |ws: extract::WebSocketUpgrade| async move {
 			ws.on_upgrade(move |ws| async move {
-				socket_handler(io, ws).await;
+				socket_handler(app, ws).await;
 			})
-		});
+		})
+	}
+
+	pub fn build_route<T: Clone + Send + Sync + 'static>() -> (axum::routing::MethodRouter<T>, App) {
+		let app = Self::new();
+		let route = app.route();
 
 		(route, app)
 	}

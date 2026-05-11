@@ -1,6 +1,6 @@
 [package]
 name = "wspc"
-version = "0.1.0"
+version = "0.1.1"
 description = "`wspc` is a lightweight Rust library for building callback-driven JSON-RPC APIs over WebSockets with Axum."
 edition = "2024"
 authors = ["Heráclito de Quadros Saldanha <heraclitoqsaldanha@gmail.com>"]
