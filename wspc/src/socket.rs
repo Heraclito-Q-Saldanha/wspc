@@ -58,19 +58,22 @@ impl Socket {
 		let inner = self.inner.read().await;
 		inner.state.try_get::<T>().cloned()
 	}
-	pub async fn join(&self, room: &str) -> error::Result<()> {
+	pub async fn join<T: ToString>(&self, room: T) -> error::Result<()> {
 		let inner = self.inner.read().await;
 
-		let receiver = inner.app.room(room).await.subscribe();
 		let room = room.to_string();
+		let receiver = inner.app.room(&room).await.subscribe();
 
 		inner.sender.send(Command::Join { room, receiver })?;
 
 		Ok(())
 	}
-	pub async fn leave(&self, room: &str) -> error::Result<()> {
+	pub async fn leave<T: ToString>(&self, room: T) -> error::Result<()> {
 		let inner = self.inner.read().await;
-		inner.sender.send(Command::Leave { room: room.to_string() })?;
+		let room = room.to_string();
+
+		inner.sender.send(Command::Leave { room })?;
+
 		Ok(())
 	}
 }

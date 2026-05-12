@@ -75,7 +75,7 @@ impl App {
 		inner.state.try_get::<T>().cloned()
 	}
 
-	pub async fn room(&self, room: &str) -> Room {
+	pub async fn room<T: ToString>(&self, room: T) -> Room {
 		let mut inner = self.inner.write().await;
 		let room = room.to_string();
 		let sender = inner.rooms.entry(room).or_insert_with(|| broadcast::channel(1024).0).clone();
