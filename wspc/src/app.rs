@@ -1,6 +1,5 @@
 use crate::*;
 
-use std::collections;
 use std::sync;
 
 use axum::extract;
@@ -17,28 +16,25 @@ use tokio_stream::wrappers;
 #[derive(Default)]
 struct InnerApp {
 	state: state::TypeMap![Send + Sync],
-	callbacks: collections::HashMap<String, callback::Callback>,
-	rooms: collections::HashMap<String, broadcast::Sender<RpcRequest>>,
+	callbacks: dashmap::DashMap<String, callback::Callback>,
+	rooms: dashmap::DashMap<String, broadcast::Sender<RpcRequest>>,
 }
 
 #[derive(Clone, Default)]
 pub struct App {
-	inner: sync::Arc<tokio::sync::RwLock<InnerApp>>,
+	inner: sync::Arc<InnerApp>,
 }
 
 impl App {
-	pub async fn on<Args: Send + Sync + 'static, Kind: Send + Sync + 'static, F: callback::FunctionCall<Args, Kind> + Send + Sync + 'static>(&self, event: &str, handler: F) {
-		let mut inner = self.inner.write().await;
-
+	pub fn on<Args: Send + Sync + 'static, Kind: Send + Sync + 'static, F: callback::FunctionCall<Args, Kind> + Send + Sync + 'static>(&self, event: &str, handler: F) {
 		let event = event.to_string();
 		let handler = callback::Callback::new::<Args, Kind, F>(handler);
 
-		inner.callbacks.insert(event, handler);
+		self.inner.callbacks.insert(event, handler);
 	}
 
-	pub async fn off(&self, event: &str) {
-		let mut inner = self.inner.write().await;
-		inner.callbacks.remove(event);
+	pub fn off(&self, event: &str) {
+		self.inner.callbacks.remove(event);
 	}
 
 	#[inline(always)]
@@ -64,27 +60,26 @@ impl App {
 	}
 
 	#[inline]
-	pub async fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> bool {
-		let inner = self.inner.read().await;
-		inner.state.set(value)
+	pub fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> bool {
+		self.inner.state.set(value)
 	}
 
 	#[inline]
-	pub async fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
-		let inner = self.inner.read().await;
-		inner.state.try_get::<T>().cloned()
+	pub fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
+		self.inner.state.try_get::<T>().cloned()
 	}
 
-	pub async fn room<T: ToString>(&self, room: T) -> Room {
-		let mut inner = self.inner.write().await;
+	pub fn room<T: ToString>(&self, room: T) -> Room {
 		let room = room.to_string();
-		let sender = inner.rooms.entry(room).or_insert_with(|| broadcast::channel(1024).0).clone();
+		let sender = self.inner.rooms.entry(room).or_insert_with(|| broadcast::channel(1024).0).clone();
 		Room::new(sender)
 	}
 
-	async fn get_callback(&self, event: &str) -> Option<callback::Callback> {
-		let inner = self.inner.read().await;
-		inner.callbacks.get(event).cloned()
+	pub(crate) fn get_callback(&self, event: &str) -> Option<callback::Callback> {
+		match self.inner.callbacks.get(event) {
+			Some(callback) => Some(callback.clone()),
+			None => None,
+		}
 	}
 }
 
@@ -95,7 +90,7 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 
 	let socket = Socket::new(app.clone(), sender);
 
-	if let Some(callback) = app.get_callback("connect").await {
+	if let Some(callback) = app.get_callback("connect") {
 		let context = callback::CallContext {
 			socket: socket.clone(),
 			app: app.clone(),
@@ -205,7 +200,7 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 		}
 	}
 
-	if let Some(callback) = app.get_callback("disconnect").await {
+	if let Some(callback) = app.get_callback("disconnect") {
 		let context = callback::CallContext { socket, app, args: RpcParams::Null };
 
 		if let Err(err) = callback.call(context).await {
@@ -224,7 +219,7 @@ async fn process_request(app: &App, socket: &Socket, req: RpcRequest) -> Option<
 
 		return None;
 	}
-	let Some(callback) = app.get_callback(&req.method).await else {
+	let Some(callback) = app.get_callback(&req.method) else {
 		log::warn!("No callback found for method: {}", req.method);
 
 		if req.id != Id::Null {

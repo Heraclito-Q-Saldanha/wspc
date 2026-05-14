@@ -1,17 +1,17 @@
-async fn send_message(app: wspc::App, socket: wspc::Socket, msg: String) {
-	if let Some(room) = socket.get_state::<String>().await {
-		app.room(&room).await.emit("message_received", (msg,)).unwrap();
+fn send_message(app: wspc::App, socket: wspc::Socket, msg: String) {
+	if let Some(room) = socket.get_state::<String>() {
+		app.room(&room).emit("message_received", (msg,)).unwrap();
 	} else {
 		log::info!("Received message without a room: {}", msg);
 	}
 }
 
-async fn join_room(socket: wspc::Socket, room: String) {
-	if let Some(current_room) = socket.get_state::<String>().await {
-		let _ = socket.leave(&current_room).await;
+fn join_room(socket: wspc::Socket, room: String) {
+	if let Some(current_room) = socket.get_state::<String>() {
+		let _ = socket.leave(&current_room);
 	}
-	socket.join(&room).await.unwrap();
-	socket.set_state(room).await;
+	socket.join(&room).unwrap();
+	socket.set_state(room);
 }
 
 #[tokio::main]
@@ -20,8 +20,8 @@ async fn main() {
 
 	let (route, app) = wspc::App::build_route();
 
-	app.on("join_room", join_room).await;
-	app.on("send_message", send_message).await;
+	app.on("join_room", join_room);
+	app.on("send_message", send_message);
 
 	let router = axum::Router::new().route("/ws", route);
 	let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();

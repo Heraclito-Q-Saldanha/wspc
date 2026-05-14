@@ -14,7 +14,7 @@ async fn main() {
 
 	let (route, app) = wspc::App::build_route();
 
-	app.on("value", value).await;
+	app.on("value", value);
 
 	let router = axum::Router::new().route("/ws", route);
 	let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();

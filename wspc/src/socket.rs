@@ -22,7 +22,7 @@ struct InnerSocket {
 
 #[derive(Clone)]
 pub struct Socket {
-	inner: sync::Arc<tokio::sync::RwLock<InnerSocket>>,
+	inner: sync::Arc<InnerSocket>,
 }
 
 impl Socket {
@@ -30,49 +30,42 @@ impl Socket {
 		let id = uuid::Uuid::new_v4();
 		let state = state::TypeMap::default();
 
-		let inner = sync::Arc::new(tokio::sync::RwLock::new(InnerSocket { id, app, state, sender }));
+		let inner = sync::Arc::new(InnerSocket { id, app, state, sender });
 
 		Socket { inner }
 	}
-	pub(crate) async fn write(&self, msg: extract::ws::Message) -> error::Result<()> {
-		let inner = self.inner.read().await;
-		Ok(inner.sender.send(Command::Message(msg))?)
+	pub(crate) fn write(&self, msg: extract::ws::Message) -> error::Result<()> {
+		Ok(self.inner.sender.send(Command::Message(msg))?)
 	}
-	pub async fn send<T: serde::Serialize>(&self, method: &str, msg: T) -> error::Result<()> {
+	pub fn send<T: serde::Serialize>(&self, method: &str, msg: T) -> error::Result<()> {
 		let params = RpcParams::try_from(serde_json::to_value(msg)?)?;
 		let message = serde_json::to_string(&RpcRequest::new(Id::Null, &method, params))?;
-		Ok(self.write(extract::ws::Message::Text(message.into())).await?)
+		Ok(self.write(extract::ws::Message::Text(message.into()))?)
 	}
 	#[inline]
-	pub async fn id(&self) -> uuid::Uuid {
-		let inner = self.inner.read().await;
-		inner.id
+	pub fn id(&self) -> uuid::Uuid {
+		self.inner.id
 	}
 	#[inline]
-	pub async fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> bool {
-		let inner = self.inner.read().await;
-		inner.state.set(value)
+	pub fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> bool {
+		self.inner.state.set(value)
 	}
 	#[inline]
-	pub async fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
-		let inner = self.inner.read().await;
-		inner.state.try_get::<T>().cloned()
+	pub fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
+		self.inner.state.try_get::<T>().cloned()
 	}
-	pub async fn join<T: ToString>(&self, room: T) -> error::Result<()> {
-		let inner = self.inner.read().await;
-
+	pub fn join<T: ToString>(&self, room: T) -> error::Result<()> {
 		let room = room.to_string();
-		let receiver = inner.app.room(&room).await.subscribe();
+		let receiver = self.inner.app.room(&room).subscribe();
 
-		inner.sender.send(Command::Join { room, receiver })?;
+		self.inner.sender.send(Command::Join { room, receiver })?;
 
 		Ok(())
 	}
-	pub async fn leave<T: ToString>(&self, room: T) -> error::Result<()> {
-		let inner = self.inner.read().await;
+	pub fn leave<T: ToString>(&self, room: T) -> error::Result<()> {
 		let room = room.to_string();
 
-		inner.sender.send(Command::Leave { room })?;
+		self.inner.sender.send(Command::Leave { room })?;
 
 		Ok(())
 	}

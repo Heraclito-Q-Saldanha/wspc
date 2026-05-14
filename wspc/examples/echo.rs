@@ -1,6 +1,6 @@
-async fn ping(socket: wspc::Socket) {
-	log::info!("Received ping from socket {}", socket.id().await);
-	socket.send("pong", ()).await.unwrap();
+fn ping(socket: wspc::Socket) {
+	log::info!("Received ping from socket {}", socket.id());
+	socket.send("pong", ()).unwrap();
 }
 
 #[tokio::main]
@@ -9,7 +9,7 @@ async fn main() {
 
 	let (route, app) = wspc::App::build_route();
 
-	app.on("ping", ping).await;
+	app.on("ping", ping);
 
 	let router = axum::Router::new().route("/ws", route);
 	let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();

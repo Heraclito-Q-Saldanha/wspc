@@ -1,5 +1,5 @@
-async fn get_state(app: wspc::App) -> String {
-	app.get_state::<String>().await.unwrap()
+fn get_state(app: wspc::App) -> String {
+	app.get_state::<String>().unwrap()
 }
 
 #[tokio::main]
@@ -8,8 +8,8 @@ async fn main() {
 
 	let (route, app) = wspc::App::build_route();
 
-	app.set_state("my awesome state".to_string()).await;
-	app.on("get_state", get_state).await;
+	app.set_state("my awesome state".to_string());
+	app.on("get_state", get_state);
 
 	let router = axum::Router::new().route("/ws", route);
 	let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
