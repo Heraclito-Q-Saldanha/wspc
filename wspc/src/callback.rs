@@ -64,17 +64,17 @@ trait ErasedFunctionCall {
 }
 
 #[derive(Clone)]
-pub struct Callback {
+pub(crate) struct Callback {
 	handler: sync::Arc<dyn ErasedFunctionCall + Send + Sync>,
 }
 
 impl Callback {
-	pub fn new<Args: Send + Sync + 'static, Kind: Send + Sync + 'static, F: FunctionCall<Args, Kind> + Send + Sync + 'static>(handler: F) -> Self {
+	pub(crate) fn new<Args: Send + Sync + 'static, Kind: Send + Sync + 'static, F: FunctionCall<Args, Kind> + Send + Sync + 'static>(handler: F) -> Self {
 		let handler = sync::Arc::new((handler, std::marker::PhantomData::<(Args, Kind)>));
 		Self { handler }
 	}
 	#[inline(always)]
-	pub fn call(&self, ctx: CallContext) -> CallbackFuture {
+	pub(crate) fn call(&self, ctx: CallContext) -> CallbackFuture {
 		self.handler.call(ctx)
 	}
 }
