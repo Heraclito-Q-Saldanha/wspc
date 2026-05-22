@@ -15,6 +15,7 @@ use tokio_stream::wrappers;
 
 #[derive(Default)]
 struct InnerApp {
+	#[cfg(feature = "state")]
 	state: state::TypeMap![Send + Sync],
 	callbacks: dashmap::DashMap<String, callback::Callback>,
 	rooms: dashmap::DashMap<String, broadcast::Sender<RpcRequest>>,
@@ -58,12 +59,12 @@ impl App {
 
 		(route, app)
 	}
-
+	#[cfg(feature = "state")]
 	#[inline]
 	pub fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> bool {
 		self.inner.state.set(value)
 	}
-
+	#[cfg(feature = "state")]
 	#[inline]
 	pub fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
 		self.inner.state.try_get::<T>().cloned()

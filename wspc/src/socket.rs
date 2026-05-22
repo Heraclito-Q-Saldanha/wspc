@@ -16,6 +16,7 @@ pub(crate) enum Command {
 struct InnerSocket {
 	id: uuid::Uuid,
 	app: App,
+	#[cfg(feature = "state")]
 	state: state::TypeMap![Send + Sync],
 	sender: mpsc::UnboundedSender<Command>,
 }
@@ -28,9 +29,13 @@ pub struct Socket {
 impl Socket {
 	pub(crate) fn new(app: App, sender: mpsc::UnboundedSender<Command>) -> Self {
 		let id = uuid::Uuid::new_v4();
-		let state = state::TypeMap::default();
-
-		let inner = sync::Arc::new(InnerSocket { id, app, state, sender });
+		#[cfg(feature = "state")]
+		let inner = {
+			let state = state::TypeMap::default();
+			sync::Arc::new(InnerSocket { id, app, state, sender })
+		};
+		#[cfg(not(feature = "state"))]
+		let inner = sync::Arc::new(InnerSocket { id, app, sender });
 
 		Socket { inner }
 	}
@@ -46,10 +51,12 @@ impl Socket {
 	pub fn id(&self) -> uuid::Uuid {
 		self.inner.id
 	}
+	#[cfg(feature = "state")]
 	#[inline]
 	pub fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> bool {
 		self.inner.state.set(value)
 	}
+	#[cfg(feature = "state")]
 	#[inline]
 	pub fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
 		self.inner.state.try_get::<T>().cloned()
