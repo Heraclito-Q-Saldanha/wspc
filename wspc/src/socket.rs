@@ -14,10 +14,11 @@ pub(crate) enum Command {
 }
 
 struct InnerSocket {
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	id: uuid::Uuid,
-	app: App,
 	#[cfg(feature = "state")]
 	state: TypeMap,
+	app: App,
 	sender: mpsc::UnboundedSender<Command>,
 }
 
@@ -28,14 +29,23 @@ pub struct Socket {
 
 impl Socket {
 	pub(crate) fn new(app: App, sender: mpsc::UnboundedSender<Command>) -> Self {
+		#[cfg(feature = "uuid_v4")]
 		let id = uuid::Uuid::new_v4();
+		#[cfg(feature = "uuid_v7")]
+		let id = uuid::Uuid::now_v7();
 		#[cfg(feature = "state")]
+		let state = TypeMap::new();
+
 		let inner = {
-			let state = TypeMap::new();
-			sync::Arc::new(InnerSocket { id, app, state, sender })
+			sync::Arc::new(InnerSocket {
+				#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+				id,
+				#[cfg(feature = "state")]
+				state,
+				app,
+				sender,
+			})
 		};
-		#[cfg(not(feature = "state"))]
-		let inner = sync::Arc::new(InnerSocket { id, app, sender });
 
 		Socket { inner }
 	}
@@ -47,6 +57,7 @@ impl Socket {
 		let message = serde_json::to_string(&RpcRequest::new(Id::Null, &method, params))?;
 		Ok(self.write(extract::ws::Message::Text(message.into()))?)
 	}
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	#[inline]
 	pub fn id(&self) -> uuid::Uuid {
 		self.inner.id
