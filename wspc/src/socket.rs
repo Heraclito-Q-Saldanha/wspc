@@ -17,7 +17,7 @@ struct InnerSocket {
 	id: uuid::Uuid,
 	app: App,
 	#[cfg(feature = "state")]
-	state: state::TypeMap![Send + Sync],
+	state: TypeMap,
 	sender: mpsc::UnboundedSender<Command>,
 }
 
@@ -31,7 +31,7 @@ impl Socket {
 		let id = uuid::Uuid::new_v4();
 		#[cfg(feature = "state")]
 		let inner = {
-			let state = state::TypeMap::default();
+			let state = TypeMap::new();
 			sync::Arc::new(InnerSocket { id, app, state, sender })
 		};
 		#[cfg(not(feature = "state"))]
@@ -53,13 +53,13 @@ impl Socket {
 	}
 	#[cfg(feature = "state")]
 	#[inline]
-	pub fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> bool {
+	pub fn set_state<T: Send + Sync + Clone + 'static>(&self, value: T) -> Option<T> {
 		self.inner.state.set(value)
 	}
 	#[cfg(feature = "state")]
 	#[inline]
 	pub fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
-		self.inner.state.try_get::<T>().cloned()
+		self.inner.state.get::<T>()
 	}
 	pub fn join<T: ToString>(&self, room: T) -> error::Result<()> {
 		let room = room.to_string();
