@@ -99,6 +99,7 @@ impl_default_response!(i128,);
 impl_default_response!(f32,);
 impl_default_response!(f64,);
 impl_default_response!(String,);
+impl_default_response!(&'static str,);
 
 impl_default_response!(Vec<T>, T);
 impl_default_response!(Box<[T]>, T);
