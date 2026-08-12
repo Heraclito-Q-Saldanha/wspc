@@ -89,7 +89,7 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 
 	let (sender, mut receiver) = mpsc::unbounded_channel();
 
-	let socket = Socket::new(app.clone(), sender);
+	let socket = Socket::new(sender);
 
 	if let Some(callback) = app.get_callback("connect") {
 		let context = callback::CallContext {
@@ -107,8 +107,11 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 		tokio::select! {
 			command = receiver.recv() => {
 				match command {
-					Some(Command::Join { room, receiver }) => {
-						rooms.insert(room, wrappers::BroadcastStream::new(receiver));
+					Some(Command::Join { room }) => {
+						let receiver = app.room(&room).subscribe();
+						let stream = wrappers::BroadcastStream::new(receiver);
+
+						rooms.insert(room, stream);
 					}
 					Some(Command::Leave { room }) => {
 						rooms.remove(&room);

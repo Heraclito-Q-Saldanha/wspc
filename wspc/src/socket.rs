@@ -3,12 +3,10 @@ use crate::*;
 use std::sync;
 
 use axum::extract;
-
-use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 
 pub(crate) enum Command {
-	Join { room: String, receiver: broadcast::Receiver<RpcRequest> },
+	Join { room: String },
 	Leave { room: String },
 	Message(extract::ws::Message),
 }
@@ -18,7 +16,6 @@ struct InnerSocket {
 	id: uuid::Uuid,
 	#[cfg(feature = "state")]
 	state: TypeMap,
-	app: App,
 	sender: mpsc::UnboundedSender<Command>,
 }
 
@@ -28,7 +25,7 @@ pub struct Socket {
 }
 
 impl Socket {
-	pub(crate) fn new(app: App, sender: mpsc::UnboundedSender<Command>) -> Self {
+	pub(crate) fn new(sender: mpsc::UnboundedSender<Command>) -> Self {
 		#[cfg(feature = "uuid_v4")]
 		let id = uuid::Uuid::new_v4();
 		#[cfg(feature = "uuid_v7")]
@@ -42,7 +39,6 @@ impl Socket {
 				id,
 				#[cfg(feature = "state")]
 				state,
-				app,
 				sender,
 			})
 		};
@@ -74,9 +70,8 @@ impl Socket {
 	}
 	pub fn join<T: ToString>(&self, room: T) -> error::Result<()> {
 		let room = room.to_string();
-		let receiver = self.inner.app.room(&room).subscribe();
 
-		self.inner.sender.send(Command::Join { room, receiver })?;
+		self.inner.sender.send(Command::Join { room })?;
 
 		Ok(())
 	}
