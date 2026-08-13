@@ -8,7 +8,9 @@ pub struct Room {
 }
 
 impl Room {
-	pub(crate) fn new(sender: broadcast::Sender<RpcRequest>) -> Self {
+	pub(crate) fn new() -> Self {
+		let sender = broadcast::channel(1024).0;
+
 		Self { sender }
 	}
 	pub(crate) fn subscribe(&self) -> broadcast::Receiver<RpcRequest> {

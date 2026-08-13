@@ -49,6 +49,7 @@ pub trait IntoErrorResponse {
 
 pub trait Arg: Sized {
 	type Error: IntoErrorResponse;
+
 	fn from_context(context: &mut CallContext) -> Result<Self, Self::Error>;
 }
 
@@ -88,6 +89,7 @@ impl<Args, Kind, F: FunctionCall<Args, Kind>> ErasedFunctionCall for (F, marker:
 
 impl<T: serde::de::DeserializeOwned> Arg for T {
 	type Error = error::Error;
+
 	fn from_context(ctx: &mut CallContext) -> Result<Self, Self::Error> {
 		match &mut ctx.args {
 			RpcParams::Null => Err(error::Error::ArgumentNotFound),
@@ -117,6 +119,7 @@ impl<T: serde::de::DeserializeOwned> Arg for Params<T> {
 
 impl Arg for App {
 	type Error = error::Error;
+
 	#[inline(always)]
 	fn from_context(context: &mut CallContext) -> Result<Self, Self::Error> {
 		Ok(context.app.clone())

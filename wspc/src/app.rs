@@ -6,8 +6,6 @@ use axum::extract;
 use axum::routing;
 
 use futures_util::StreamExt;
-
-use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 
 use tokio_stream::StreamMap;
@@ -18,7 +16,7 @@ struct InnerApp {
 	#[cfg(feature = "state")]
 	state: TypeMap,
 	callbacks: dashmap::DashMap<String, callback::Callback>,
-	rooms: dashmap::DashMap<String, broadcast::Sender<RpcRequest>>,
+	rooms: dashmap::DashMap<String, Room>,
 }
 
 #[derive(Clone, Default)]
@@ -27,22 +25,19 @@ pub struct App {
 }
 
 impl App {
+	#[inline(always)]
+	pub fn new() -> Self {
+		Self::default()
+	}
 	pub fn on<Args: Send + Sync + 'static, Kind: Send + Sync + 'static, F: callback::FunctionCall<Args, Kind> + Send + Sync + 'static>(&self, event: &str, handler: F) {
 		let event = event.to_string();
 		let handler = callback::Callback::new::<Args, Kind, F>(handler);
 
 		self.inner.callbacks.insert(event, handler);
 	}
-
 	pub fn off(&self, event: &str) {
 		self.inner.callbacks.remove(event);
 	}
-
-	#[inline(always)]
-	pub fn new() -> Self {
-		Self::default()
-	}
-
 	pub fn route<T: Clone + Send + Sync + 'static>(&self) -> axum::routing::MethodRouter<T> {
 		let app = self.clone();
 
@@ -52,7 +47,6 @@ impl App {
 			})
 		})
 	}
-
 	pub fn build_route<T: Clone + Send + Sync + 'static>() -> (axum::routing::MethodRouter<T>, App) {
 		let app = Self::new();
 		let route = app.route();
@@ -69,13 +63,11 @@ impl App {
 	pub fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
 		self.inner.state.get::<T>()
 	}
-
 	pub fn room<T: ToString>(&self, room: T) -> Room {
 		let room = room.to_string();
-		let sender = self.inner.rooms.entry(room).or_insert_with(|| broadcast::channel(1024).0).clone();
-		Room::new(sender)
-	}
 
+		self.inner.rooms.entry(room).or_insert_with(|| Room::new()).clone()
+	}
 	pub(crate) fn get_callback(&self, event: &str) -> Option<callback::Callback> {
 		match self.inner.callbacks.get(event) {
 			Some(callback) => Some(callback.clone()),
@@ -182,8 +174,6 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 								continue;
 							}
 						};
-
-
 					},
 					Message::Batch(reqs) => {
 						let values = futures_util::future::join_all(reqs.into_iter().map(|req| process_request(&app, &socket, req))).await;

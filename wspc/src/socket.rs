@@ -51,6 +51,7 @@ impl Socket {
 	pub fn send<T: serde::Serialize>(&self, method: &str, msg: T) -> error::Result<()> {
 		let params = RpcParams::try_from(serde_json::to_value(msg)?)?;
 		let message = serde_json::to_string(&RpcRequest::new(Id::Null, &method, params))?;
+
 		Ok(self.write(extract::ws::Message::Text(message.into()))?)
 	}
 	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
@@ -71,16 +72,12 @@ impl Socket {
 	pub fn join<T: ToString>(&self, room: T) -> error::Result<()> {
 		let room = room.to_string();
 
-		self.inner.sender.send(Command::Join { room })?;
-
-		Ok(())
+		Ok(self.inner.sender.send(Command::Join { room })?)
 	}
 	pub fn leave<T: ToString>(&self, room: T) -> error::Result<()> {
 		let room = room.to_string();
 
-		self.inner.sender.send(Command::Leave { room })?;
-
-		Ok(())
+		Ok(self.inner.sender.send(Command::Leave { room })?)
 	}
 }
 
