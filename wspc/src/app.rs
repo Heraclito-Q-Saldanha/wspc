@@ -17,6 +17,8 @@ struct InnerApp {
 	state: TypeMap,
 	callbacks: dashmap::DashMap<String, callback::Callback>,
 	rooms: dashmap::DashMap<String, Room>,
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	sockets: dashmap::DashMap<uuid::Uuid, Socket>,
 }
 
 #[derive(Clone, Default)]
@@ -68,11 +70,27 @@ impl App {
 
 		self.inner.rooms.entry(room).or_insert_with(|| Room::new()).clone()
 	}
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	pub fn socket(&self, socket_id: uuid::Uuid) -> Option<Socket> {
+		self.inner.sockets.get(&socket_id).map(|entry| entry.value().clone())
+	}
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	pub fn sockets(&self) -> Vec<Socket> {
+		self.inner.sockets.iter().map(|entry| entry.value().clone()).collect()
+	}
 	pub(crate) fn get_callback(&self, event: &str) -> Option<callback::Callback> {
 		match self.inner.callbacks.get(event) {
 			Some(callback) => Some(callback.clone()),
 			None => None,
 		}
+	}
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	pub(crate) fn insert_socket(&self, socket: Socket) {
+		self.inner.sockets.insert(socket.id(), socket);
+	}
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	pub(crate) fn remove_socket(&self, socket_id: uuid::Uuid) {
+		self.inner.sockets.remove(&socket_id);
 	}
 }
 
@@ -83,12 +101,15 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 
 	let socket = Socket::new(sender);
 
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	app.insert_socket(socket.clone());
+
 	if let Some(callback) = app.get_callback("connect") {
-		let context = callback::CallContext {
-			socket: socket.clone(),
-			app: app.clone(),
-			args: RpcParams::Null,
-		};
+		let socket = socket.clone();
+		let app = app.clone();
+		let args = RpcParams::Null;
+
+		let context = callback::CallContext { socket, app, args };
 
 		if let Err(err) = callback.call(context).await {
 			log::error!("Failed to execute connect callback: {:?}", err);
@@ -99,16 +120,16 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 		tokio::select! {
 			command = receiver.recv() => {
 				match command {
-					Some(Command::Join { room }) => {
-						let receiver = app.room(&room).subscribe();
-						let stream = wrappers::BroadcastStream::new(receiver);
+					Some(Command::JoinRoom { name }) => {
+						let room = app.room(&name);
+						let stream = room.broadcast_stream();
 
-						rooms.insert(room, stream);
+						rooms.insert(name, stream);
 					}
-					Some(Command::Leave { room }) => {
-						rooms.remove(&room);
+					Some(Command::LeaveRoom { name }) => {
+						rooms.remove(&name);
 					}
-					Some(Command::Message(msg)) => {
+					Some(Command::SendMessage(msg)) => {
 						if let Err(err) = ws.send(msg).await {
 							log::error!("Failed to send message: {:?}", err);
 							break;
@@ -195,12 +216,19 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 	}
 
 	if let Some(callback) = app.get_callback("disconnect") {
-		let context = callback::CallContext { socket, app, args: RpcParams::Null };
+		let socket = socket.clone();
+		let app = app.clone();
+		let args = RpcParams::Null;
+
+		let context = callback::CallContext { socket, app, args };
 
 		if let Err(err) = callback.call(context).await {
 			log::error!("Failed to execute disconnect callback: {:?}", err);
 		}
 	}
+
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	app.remove_socket(socket.id());
 }
 
 async fn process_request(app: &App, socket: &Socket, req: RpcRequest) -> Option<RpcResponse> {

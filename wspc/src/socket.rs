@@ -6,9 +6,9 @@ use axum::extract;
 use tokio::sync::mpsc;
 
 pub(crate) enum Command {
-	Join { room: String },
-	Leave { room: String },
-	Message(extract::ws::Message),
+	JoinRoom { name: String },
+	LeaveRoom { name: String },
+	SendMessage(extract::ws::Message),
 }
 
 struct InnerSocket {
@@ -46,7 +46,7 @@ impl Socket {
 		Socket { inner }
 	}
 	pub(crate) fn write(&self, msg: extract::ws::Message) -> error::Result<()> {
-		Ok(self.inner.sender.send(Command::Message(msg))?)
+		Ok(self.inner.sender.send(Command::SendMessage(msg))?)
 	}
 	pub fn send<T: serde::Serialize>(&self, method: &str, msg: T) -> error::Result<()> {
 		let params = RpcParams::try_from(serde_json::to_value(msg)?)?;
@@ -70,14 +70,14 @@ impl Socket {
 		self.inner.state.get::<T>()
 	}
 	pub fn join<T: ToString>(&self, room: T) -> error::Result<()> {
-		let room = room.to_string();
+		let name = room.to_string();
 
-		Ok(self.inner.sender.send(Command::Join { room })?)
+		Ok(self.inner.sender.send(Command::JoinRoom { name })?)
 	}
 	pub fn leave<T: ToString>(&self, room: T) -> error::Result<()> {
-		let room = room.to_string();
+		let name = room.to_string();
 
-		Ok(self.inner.sender.send(Command::Leave { room })?)
+		Ok(self.inner.sender.send(Command::LeaveRoom { name })?)
 	}
 }
 

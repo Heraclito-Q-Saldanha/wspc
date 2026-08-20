@@ -96,6 +96,7 @@ impl<T: serde::de::DeserializeOwned> Arg for T {
 			RpcParams::Object(args) => {
 				let args = std::mem::take(args);
 				let value = Value::Object(args);
+
 				Ok(serde_json::from_value(value)?)
 			}
 			RpcParams::Array(args) => match args.pop_front() {
@@ -113,6 +114,7 @@ impl<T: serde::de::DeserializeOwned> Arg for Params<T> {
 	fn from_context(ctx: &mut CallContext) -> Result<Self, Self::Error> {
 		let args = std::mem::take(&mut ctx.args);
 		let value: Value = args.into();
+
 		Ok(Self(serde_json::from_value(value)?))
 	}
 }
