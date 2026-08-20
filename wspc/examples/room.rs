@@ -14,6 +14,18 @@ fn join_room(socket: wspc::Socket, room: String) {
 	socket.set_state(room);
 }
 
+fn list_room_members(app: wspc::App, socket: wspc::Socket) -> Vec<uuid::Uuid> {
+	if let Some(room) = socket.get_state::<String>() {
+		let room = app.room(room);
+		let sockets = room.sockets();
+
+		return sockets.into_iter().map(|socket| socket.id()).collect();
+	} else {
+		log::info!("Socket is not in any room; cannot list members");
+		return Vec::new();
+	}
+}
+
 #[tokio::main]
 async fn main() {
 	simple_logger::init_with_level(log::Level::Info).unwrap();
@@ -22,6 +34,7 @@ async fn main() {
 
 	app.on("join_room", join_room);
 	app.on("send_message", send_message);
+	app.on("list_room_members", list_room_members);
 
 	let router = axum::Router::new().route("/ws", route);
 	let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();

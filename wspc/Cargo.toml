@@ -1,6 +1,6 @@
 [package]
 name = "wspc"
-version = "0.4.2"
+version = "0.4.3"
 description = "`wspc` is a lightweight Rust library for building callback-driven JSON-RPC APIs over WebSockets with Axum."
 edition = "2024"
 authors = ["Heráclito de Quadros Saldanha <heraclitoqsaldanha@gmail.com>"]
@@ -11,8 +11,8 @@ repository = "https://github.com/Heraclito-Q-Saldanha/wspc"
 
 [features]
 default = ["state"]
-uuid_v4 = ["dep:uuid", "uuid/v4"]
-uuid_v7 = ["dep:uuid", "uuid/v7"]
+uuid_v4 = ["dep:uuid", "uuid/v4", "uuid/serde"]
+uuid_v7 = ["dep:uuid", "uuid/v7", "uuid/serde"]
 state = []
 
 [dependencies]
@@ -38,4 +38,8 @@ required-features = ["uuid_v7"]
 
 [[example]]
 name = "life_cycle"
+required-features = ["uuid_v7"]
+
+[[example]]
+name = "room"
 required-features = ["uuid_v7"]

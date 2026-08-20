@@ -124,9 +124,17 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 						let room = app.room(&name);
 						let stream = room.broadcast_stream();
 
+						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+						room.insert_socket(socket.clone());
 						rooms.insert(name, stream);
 					}
 					Some(Command::LeaveRoom { name }) => {
+						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+						{
+							let room = app.room(&name);
+
+							room.remove_socket(socket.id());
+						}
 						rooms.remove(&name);
 					}
 					Some(Command::SendMessage(msg)) => {
@@ -225,6 +233,13 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 		if let Err(err) = callback.call(context).await {
 			log::error!("Failed to execute disconnect callback: {:?}", err);
 		}
+	}
+
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	for room_name in rooms.keys() {
+		let room = app.room(room_name);
+
+		room.remove_socket(socket.id());
 	}
 
 	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
