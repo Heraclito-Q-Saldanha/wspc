@@ -24,6 +24,13 @@ impl<T> From<tokio::sync::mpsc::error::SendError<T>> for Error {
 	}
 }
 
+impl From<tokio::sync::oneshot::error::RecvError> for Error {
+	#[inline(always)]
+	fn from(_: tokio::sync::oneshot::error::RecvError) -> Self {
+		Self::SocketClosed
+	}
+}
+
 impl IntoErrorResponse for Error {
 	fn into_error_response(self) -> ErrorResponse {
 		match self {

@@ -3,12 +3,15 @@ use crate::*;
 use std::sync;
 
 use axum::extract;
+
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 pub(crate) enum Command {
-	JoinRoom { name: String },
-	LeaveRoom { name: String },
+	JoinRoom { name: String, ack: oneshot::Sender<()> },
+	LeaveRoom { name: String, ack: oneshot::Sender<()> },
 	SendMessage(extract::ws::Message),
+	Close { ack: oneshot::Sender<()> },
 }
 
 struct InnerSocket {
@@ -69,15 +72,27 @@ impl Socket {
 	pub fn get_state<T: Send + Sync + Clone + 'static>(&self) -> Option<T> {
 		self.inner.state.get::<T>()
 	}
-	pub fn join<T: ToString>(&self, room: T) -> error::Result<()> {
+	pub async fn join<T: ToString>(&self, room: T) -> error::Result<()> {
 		let name = room.to_string();
+		let (ack, awaiter) = oneshot::channel();
 
-		Ok(self.inner.sender.send(Command::JoinRoom { name })?)
+		self.inner.sender.send(Command::JoinRoom { name, ack })?;
+
+		Ok(awaiter.await?)
 	}
-	pub fn leave<T: ToString>(&self, room: T) -> error::Result<()> {
+	pub async fn leave<T: ToString>(&self, room: T) -> error::Result<()> {
 		let name = room.to_string();
+		let (ack, awaiter) = oneshot::channel();
 
-		Ok(self.inner.sender.send(Command::LeaveRoom { name })?)
+		self.inner.sender.send(Command::LeaveRoom { name, ack })?;
+
+		Ok(awaiter.await?)
+	}
+	pub async fn close(&self) -> error::Result<()> {
+		let (ack, awaiter) = oneshot::channel();
+		self.inner.sender.send(Command::Close { ack })?;
+
+		Ok(awaiter.await?)
 	}
 }
 
