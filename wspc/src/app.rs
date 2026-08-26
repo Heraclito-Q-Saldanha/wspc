@@ -5,6 +5,7 @@ use std::sync;
 use axum::extract;
 use axum::routing;
 
+use futures_util::SinkExt;
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
 
@@ -94,15 +95,28 @@ impl App {
 	}
 }
 
-async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
-	let mut rooms = StreamMap::new();
+async fn socket_handler(app: App, ws: extract::ws::WebSocket) {
+	let (command_sender, command_receiver) = mpsc::unbounded_channel();
+	let (ws_sender, mut ws_receiver) = ws.split();
 
-	let (sender, mut receiver) = mpsc::unbounded_channel();
-
-	let socket = Socket::new(sender);
+	let socket = Socket::new(command_sender);
 
 	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	app.insert_socket(socket.clone());
+
+	{
+		let app = app.clone();
+		#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+		let socket = socket.clone();
+
+		tokio::spawn(command_handler(
+			app,
+			command_receiver,
+			ws_sender,
+			#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+			socket,
+		));
+	}
 
 	if let Some(callback) = app.get_callback("connect") {
 		let socket = socket.clone();
@@ -117,110 +131,51 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 	}
 
 	loop {
-		tokio::select! {
-			command = receiver.recv() => {
-				match command {
-					Some(Command::JoinRoom { name }) => {
-						let room = app.room(&name);
-						let stream = room.broadcast_stream();
+		let Some(Ok(msg)) = ws_receiver.next().await else {
+			break;
+		};
 
-						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
-						room.insert_socket(socket.clone());
-						rooms.insert(name, stream);
-					}
-					Some(Command::LeaveRoom { name }) => {
-						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
-						{
-							let room = app.room(&name);
+		let extract::ws::Message::Text(msg) = msg else {
+			continue;
+		};
 
-							room.remove_socket(socket.id());
-						}
-						rooms.remove(&name);
-					}
-					Some(Command::SendMessage(msg)) => {
-						if let Err(err) = ws.send(msg).await {
-							log::error!("Failed to send message: {:?}", err);
-							break;
-						}
-					}
-					None => break,
-				}
-			}
-			message = rooms.next(), if !rooms.is_empty() => {
-				let Some((room, message)) = message else {
+		match serde_json::from_str(&msg) {
+			Ok(Message::Single(req)) => {
+				let Some(response) = process_request(&app, &socket, req).await else {
 					continue;
 				};
-				match message {
-					Ok(message) => {
-						let payload = serde_json::to_string(&message).unwrap();
 
-						if let Err(err) = ws.send(extract::ws::Message::Text(payload.into())).await {
-							log::error!("Failed to forward room message for {}: {:?}", room, err);
-							break;
-						}
-					}
-					Err(wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)) => {
-						log::warn!("Socket lagged in room {} and skipped {} messages", room, skipped);
-					}
-				}
-			}
-			message = ws.next() => {
-				let Some(Ok(msg)) = message else {
+				let payload = serde_json::to_string(&response).unwrap();
+
+				if let Err(err) = socket.write(extract::ws::Message::Text(payload.into())) {
+					log::error!("Failed to send response: {err:?}");
 					break;
-				};
-				let extract::ws::Message::Text(msg) = msg else {
-					continue;
-				};
-				let msg: Message<RpcRequest> = match serde_json::from_str(&msg){
-					Ok(msg) => msg,
-					Err(err) => {
-						let response = RpcResponse::parse_error(Id::Null, Value::Null);
-
-						if let Ok(text) = serde_json::to_string(&response)  {
-							let _ = ws.send(extract::ws::Message::Text(text.into())).await;
-						};
-
-						log::error!("Failed to parse message: {}", err);
-						continue;
-					}
-				};
-
-				match msg {
-					Message::Single(req) => {
-						let Some(response) = process_request(&app, &socket, req).await else {
-							continue;
-						};
-
-						match serde_json::to_string(&response) {
-							Ok(playload) => {
-								if let Err(err) = ws.send(extract::ws::Message::Text(playload.into())).await {
-									log::error!("Failed to send response: {err:?}");
-									break;
-								}
-							},
-							Err(err) => {
-								log::error!("Failed to serialize response: {err:?}");
-								continue;
-							}
-						};
-					},
-					Message::Batch(reqs) => {
-						let values = futures_util::future::join_all(reqs.into_iter().map(|req| process_request(&app, &socket, req))).await;
-						let response = Message::Batch(values.into_iter().flatten().collect());
-
-						match serde_json::to_string(&response) {
-							Ok(payload) => {
-								if let Err(err) = ws.send(extract::ws::Message::Text(payload.into())).await {
-									log::error!("Failed to send batch response: {err:?}");
-									break;
-								}
-							},
-							Err(err) => log::error!("Failed to serialize batch response: {err:?}")
-						};
-					}
 				}
 			}
-		}
+			Ok(Message::Batch(reqs)) => {
+				let values = futures_util::future::join_all(reqs.into_iter().map(|req| process_request(&app, &socket, req))).await;
+				let response = Message::Batch(values.into_iter().flatten().collect());
+
+				let payload = serde_json::to_string(&response).unwrap();
+
+				if let Err(err) = socket.write(extract::ws::Message::Text(payload.into())) {
+					log::error!("Failed to send batch response: {err:?}");
+					break;
+				}
+			}
+			Err(err) => {
+				log::error!("Failed to parse message: {}", err);
+
+				let response = RpcResponse::parse_error(Id::Null, Value::Null);
+
+				let payload = serde_json::to_string(&response).unwrap();
+
+				if let Err(err) = socket.write(extract::ws::Message::Text(payload.into())) {
+					log::error!("Failed to send parse error response: {err:?}");
+					break;
+				}
+			}
+		};
 	}
 
 	if let Some(callback) = app.get_callback("disconnect") {
@@ -235,15 +190,80 @@ async fn socket_handler(app: App, mut ws: extract::ws::WebSocket) {
 		}
 	}
 
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
-	for room_name in rooms.keys() {
-		let room = app.room(room_name);
-
-		room.remove_socket(socket.id());
-	}
+	let _ = socket.close();
 
 	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	app.remove_socket(socket.id());
+}
+
+async fn command_handler(
+	app: App,
+	mut command_receiver: mpsc::UnboundedReceiver<Command>,
+	mut ws_sender: futures_util::stream::SplitSink<extract::ws::WebSocket, extract::ws::Message>,
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))] socket: Socket,
+) {
+	let mut rooms = StreamMap::new();
+
+	loop {
+		tokio::select! {
+			command = command_receiver.recv() => {
+				match command {
+					Some(Command::JoinRoom { name, ack }) => {
+						let room = app.room(&name);
+						let stream = room.broadcast_stream();
+
+						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+						room.insert_socket(socket.clone());
+						rooms.insert(name, stream);
+						let _ = ack.send(());
+					}
+					Some(Command::LeaveRoom { name, ack }) => {
+						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+						{
+							let room = app.room(&name);
+							room.remove_socket(socket.id());
+						}
+						rooms.remove(&name);
+						let _ = ack.send(());
+					}
+					Some(Command::SendMessage(msg)) => {
+						if let Err(err) = ws_sender.send(msg).await {
+							log::error!("Failed to send message to WebSocket: {:?}", err);
+							continue;
+						}
+					}
+					Some(Command::Close { ack }) => {
+						let _ = ws_sender.close().await;
+						let _ = ack.send(());
+						break;
+					}
+					None => break,
+				}
+			}
+			message = rooms.next(), if !rooms.is_empty() => {
+				match message {
+					Some((room, Ok(message))) => {
+						let payload = serde_json::to_string(&message).unwrap();
+
+						if let Err(err) = ws_sender.send(extract::ws::Message::Text(payload.into())).await {
+							log::error!("Failed to send message to WebSocket in room {}: {:?}", room, err);
+							continue;
+						}
+					}
+					Some((room, Err(wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)))) => {
+						log::warn!("Socket lagged in room {} and skipped {} messages", room, skipped);
+					}
+					None => break,
+				}
+			}
+		}
+	}
+
+	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
+	for room_name in rooms.keys() {
+		let room = app.room(room_name);
+		room.remove_socket(socket.id());
+	}
 }
 
 async fn process_request(app: &App, socket: &Socket, req: RpcRequest) -> Option<RpcResponse> {

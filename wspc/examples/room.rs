@@ -6,11 +6,11 @@ fn send_message(app: wspc::App, socket: wspc::Socket, msg: String) {
 	}
 }
 
-fn join_room(socket: wspc::Socket, room: String) {
+async fn join_room(socket: wspc::Socket, room: String) {
 	if let Some(current_room) = socket.get_state::<String>() {
-		let _ = socket.leave(&current_room);
+		socket.leave(&current_room).await.unwrap();
 	}
-	socket.join(&room).unwrap();
+	socket.join(&room).await.unwrap();
 	socket.set_state(room);
 }
 
