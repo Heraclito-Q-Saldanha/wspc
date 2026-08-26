@@ -15,7 +15,6 @@ pub(crate) enum Command {
 }
 
 struct InnerSocket {
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	id: uuid::Uuid,
 	#[cfg(feature = "state")]
 	state: TypeMap,
@@ -29,16 +28,12 @@ pub struct Socket {
 
 impl Socket {
 	pub(crate) fn new(sender: mpsc::UnboundedSender<Command>) -> Self {
-		#[cfg(feature = "uuid_v4")]
 		let id = uuid::Uuid::new_v4();
-		#[cfg(feature = "uuid_v7")]
-		let id = uuid::Uuid::now_v7();
 		#[cfg(feature = "state")]
 		let state = TypeMap::new();
 
 		let inner = {
 			sync::Arc::new(InnerSocket {
-				#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 				id,
 				#[cfg(feature = "state")]
 				state,
@@ -57,7 +52,6 @@ impl Socket {
 
 		Ok(self.write(extract::ws::Message::Text(message.into()))?)
 	}
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	#[inline]
 	pub fn id(&self) -> uuid::Uuid {
 		self.inner.id
