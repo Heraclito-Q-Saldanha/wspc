@@ -18,7 +18,6 @@ struct InnerApp {
 	state: TypeMap,
 	callbacks: dashmap::DashMap<String, callback::Callback>,
 	rooms: dashmap::DashMap<String, Room>,
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	sockets: dashmap::DashMap<uuid::Uuid, Socket>,
 }
 
@@ -71,11 +70,9 @@ impl App {
 
 		self.inner.rooms.entry(room).or_insert_with(|| Room::new()).clone()
 	}
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	pub fn socket(&self, socket_id: uuid::Uuid) -> Option<Socket> {
 		self.inner.sockets.get(&socket_id).map(|entry| entry.value().clone())
 	}
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	pub fn sockets(&self) -> Vec<Socket> {
 		self.inner.sockets.iter().map(|entry| entry.value().clone()).collect()
 	}
@@ -85,11 +82,9 @@ impl App {
 			None => None,
 		}
 	}
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	pub(crate) fn insert_socket(&self, socket: Socket) {
 		self.inner.sockets.insert(socket.id(), socket);
 	}
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	pub(crate) fn remove_socket(&self, socket_id: uuid::Uuid) {
 		self.inner.sockets.remove(&socket_id);
 	}
@@ -101,21 +96,13 @@ async fn socket_handler(app: App, ws: extract::ws::WebSocket) {
 
 	let socket = Socket::new(command_sender);
 
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	app.insert_socket(socket.clone());
 
 	{
 		let app = app.clone();
-		#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 		let socket = socket.clone();
 
-		tokio::spawn(command_handler(
-			app,
-			command_receiver,
-			ws_sender,
-			#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
-			socket,
-		));
+		tokio::spawn(command_handler(app, socket, command_receiver, ws_sender));
 	}
 
 	if let Some(callback) = app.get_callback("connect") {
@@ -192,16 +179,10 @@ async fn socket_handler(app: App, ws: extract::ws::WebSocket) {
 
 	let _ = socket.close();
 
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	app.remove_socket(socket.id());
 }
 
-async fn command_handler(
-	app: App,
-	mut command_receiver: mpsc::UnboundedReceiver<Command>,
-	mut ws_sender: futures_util::stream::SplitSink<extract::ws::WebSocket, extract::ws::Message>,
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))] socket: Socket,
-) {
+async fn command_handler(app: App, socket: Socket, mut command_receiver: mpsc::UnboundedReceiver<Command>, mut ws_sender: futures_util::stream::SplitSink<extract::ws::WebSocket, extract::ws::Message>) {
 	let mut rooms = StreamMap::new();
 
 	loop {
@@ -212,13 +193,11 @@ async fn command_handler(
 						let room = app.room(&name);
 						let stream = room.broadcast_stream();
 
-						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 						room.insert_socket(socket.clone());
 						rooms.insert(name, stream);
 						let _ = ack.send(());
 					}
 					Some(Command::LeaveRoom { name, ack }) => {
-						#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 						{
 							let room = app.room(&name);
 							room.remove_socket(socket.id());
@@ -259,7 +238,6 @@ async fn command_handler(
 		}
 	}
 
-	#[cfg(any(feature = "uuid_v4", feature = "uuid_v7"))]
 	for room_name in rooms.keys() {
 		let room = app.room(room_name);
 		room.remove_socket(socket.id());
